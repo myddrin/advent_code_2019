@@ -1,3 +1,5 @@
+from typing import List
+
 
 class PasswordBrute:
 
@@ -12,8 +14,8 @@ class PasswordBrute:
         # - It is a six-digit number.
         # - The value is within the range given in your puzzle input.
         # - Two adjacent digits are the same (like 22 in 122345).
-        # - Going from left to right, the digits never decrease; they only ever increase or stay the same (like 111123 or
-        #   135679).
+        # - Going from left to right, the digits never decrease; they only ever increase or stay the same
+        # (like 111123 or 135679).
 
         password_int = int(password_str)
         if len(password_str) != self._exp_length:
@@ -61,7 +63,8 @@ class PasswordBrute:
     def _gen_pwd(self):
         for pwd in range(self._range[0], self._range[1] + 1):
             # This is in case the range will need 0s but the count would then be wrong
-            yield ('{:0%sd}' % self._exp_length).format(pwd)
+            # yield ('{:0%sd}' % self._exp_length).format(pwd)
+            yield str(pwd)
 
     def brute_force(self):
         return {
@@ -75,8 +78,8 @@ if __name__ == '__main__':
     any_cluster = PasswordBrute(123257, 647015)
 
     valid_passwords = list(any_cluster.brute_force())
-    print('Found {} passwords with any cluster'.format(len(valid_passwords)))  # 2220
+    print(f'Found {len(valid_passwords)} passwords with any cluster')  # 2220
 
     only_pairs = PasswordBrute(123257, 647015, only_pairs=True)
     valid_passwords = list(only_pairs.brute_force())
-    print('Found {} passwords with only pairs'.format(len(valid_passwords)))  # 1316 is too low
+    print(f'Found {len(valid_passwords)} passwords with only pairs')  # 1316 is too low

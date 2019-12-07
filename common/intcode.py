@@ -299,6 +299,7 @@ class Program:
         self._inputs = inputs or []
         self._current_input = 0
         self.outputs = []
+        self.pointer = 0
 
     def reset_inputs(self, inputs=None):
         self._current_input = 0
