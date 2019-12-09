@@ -9,8 +9,8 @@ class DiagnosticProgram(Program):
         super(DiagnosticProgram, self).__init__(*args, **kwargs)
 
     def run(self, system: int) -> int:
-        self.reset_inputs([system])
         super(DiagnosticProgram, self).run()
+        self.reset_inputs([system])
         return self.outputs[-1]
 
 

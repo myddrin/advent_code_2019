@@ -19,9 +19,7 @@ class IntCodeProgram(Program):
         if param_b is not None:
             self.memory[2] = param_b
             self.log_debug(f'param_b={param_b}')
-        pointer = 0
-        while pointer is not None:
-            pointer = self.execute(pointer)
+        super(IntCodeProgram, self).run()
 
         return self.memory[0]
 

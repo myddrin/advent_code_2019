@@ -7,7 +7,7 @@ def test_day_02_first_question():
     assert prog.return_code == 3765464
 
 
-def test_day_02_second_question():
+def test_day_02_slow_second_question():
     prog = IntCodeProgram.load_memory_from_file('input.txt')
     found = brute_force(prog, 19690720, len(prog))
     assert found[0] == 76

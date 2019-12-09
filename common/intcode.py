@@ -29,6 +29,7 @@ class OpCode(IntEnum):
     JMP_FALSE = 6
     LT = 7
     EQ = 8
+    ADJ_BASE = 9
     END = 99
 
 
@@ -36,6 +37,7 @@ class OpCode(IntEnum):
 class OpMode(IntEnum):
     POSITION = 0  # address
     IMMEDIATE = 1  # value
+    RELATIVE = 2  # on the base pointer
 
 
 class BaseInstruction:
@@ -75,13 +77,15 @@ class BaseInstruction:
             raise InstructionFault(f'Invalid OpMode for {op_value}')
 
     @classmethod
-    def get_values(cls, modes: List[OpMode], args: Iterable[int], memory: List[int]):
+    def get_values(cls, modes: List[OpMode], args: Iterable[int], program: "Program"):
         rv = []
         for i, a in enumerate(args):
             if modes[i] == OpMode.POSITION:
-                rv.append(memory[a])
+                rv.append(program.memory[a])
             elif modes[i] == OpMode.IMMEDIATE:
                 rv.append(a)
+            elif modes[i] == OpMode.RELATIVE:
+                rv.append(program.memory[program.data_pointer + a])
             else:
                 raise InstructionFault(f'Unexpected OpMode for {cls.code}')
 
@@ -118,14 +122,20 @@ class BaseInstruction:
 class Base2Inputs1Output(BaseInstruction):
     params = 3
 
-    def get_elements(self, op_value: int, memory: List[int], *args):
+    def get_elements(self, op_value: int, program: "Program", *args):
         modes = self.param_modes(op_value)
-        a, b = self.get_values(modes[:-1], args[:-1], memory)
+        a, b = self.get_values(modes[:-1], args[:-1], program)
 
         if modes[-1] == OpMode.IMMEDIATE:
             raise InstructionFault(f'Output param of {op_value} cannot be immediate')
+        elif modes[-1] == OpMode.POSITION:
+            out = args[-1]
+        elif modes[-1] == OpMode.RELATIVE:
+            out = program.data_pointer + args[-1]
+        else:
+            raise InstructionFault(f'Unknown output mode for {op_value}')
 
-        return a, b, args[-1]
+        return a, b, out
 
     def as_string(self, op_value: int, program: "Program", *args):
         rv = self.raw_string(op_value, args)
@@ -138,7 +148,7 @@ class AddInstruction(Base2Inputs1Output):
     code = OpCode.ADD
 
     def execute(self, op_value: int, program: "Program", *args):
-        a, b, out = self.get_elements(op_value, program.memory, *args)
+        a, b, out = self.get_elements(op_value, program, *args)
         program.memory[out] = a + b
         return True  # continue
 
@@ -147,7 +157,7 @@ class MultInstruction(Base2Inputs1Output):
     code = OpCode.MULT
 
     def execute(self, op_value: int, program: "Program", *args):
-        a, b, out = self.get_elements(op_value, program.memory, *args)
+        a, b, out = self.get_elements(op_value, program, *args)
         program.memory[out] = a * b
         return True  # continue
 
@@ -159,10 +169,14 @@ class InputInstruction(BaseInstruction):
     def execute(self, op_value: int, program: "Program", *args):
         modes = self.param_modes(op_value)
 
-        if modes[-1] == OpMode.IMMEDIATE:
+        if modes[0] == OpMode.IMMEDIATE:
             raise InstructionFault(f'Output param of {op_value} cannot be immediate')
-
-        program.memory[args[-1]] = program.read()
+        elif modes[0] == OpMode.POSITION:
+            program.memory[args[0]] = program.read()
+        elif modes[0] == OpMode.RELATIVE:
+            program.memory[program.data_pointer + args[0]] = program.read()
+        else:
+            raise InstructionFault(f'Unknown mode in {op_value}')
         return True  # continue
 
     def as_string(self, op_value: int, program: "Program", *args):
@@ -176,7 +190,7 @@ class OutputInstruction(BaseInstruction):
 
     def execute(self, op_value: int, program: "Program", *args):
         modes = self.param_modes(op_value)
-        a = self.get_values(modes, args, program.memory)[0]
+        a = self.get_values(modes, args, program)[0]
 
         program.write(a)
         return True  # continue
@@ -207,7 +221,7 @@ class JumpIfTrueInstruction(BaseJump):
 
     def execute(self, op_value: int, program: "Program", *args):
         modes = self.param_modes(op_value)
-        values = self.get_values(modes, args, program.memory)
+        values = self.get_values(modes, args, program)
 
         if values[0] != 0:
             self.change_pointer(values[1])
@@ -221,7 +235,7 @@ class JumpIfFalseInstruction(BaseJump):
 
     def execute(self, op_value: int, program: "Program", *args):
         modes = self.param_modes(op_value)
-        values = self.get_values(modes, args, program.memory)
+        values = self.get_values(modes, args, program)
 
         if values[0] == 0:
             self.change_pointer(values[1])
@@ -233,7 +247,7 @@ class LessThanInstruction(Base2Inputs1Output):
     code = OpCode.LT
 
     def execute(self, op_value: int, program: "Program", *args):
-        a, b, out = self.get_elements(op_value, program.memory, *args)
+        a, b, out = self.get_elements(op_value, program, *args)
         program.memory[out] = int(a < b)
         return True  # continue
 
@@ -242,7 +256,7 @@ class EqualsInstruction(Base2Inputs1Output):
     code = OpCode.EQ
 
     def execute(self, op_value: int, program: "Program", *args):
-        a, b, out = self.get_elements(op_value, program.memory, *args)
+        a, b, out = self.get_elements(op_value, program, *args)
         program.memory[out] = int(a == b)
         return True  # continue
 
@@ -254,7 +268,70 @@ class EndInstruction(BaseInstruction):
         return False  # stop
 
 
+class AdjustBaseInstruction(BaseInstruction):
+    code = OpCode.ADJ_BASE
+    params = 1
+
+    def execute(self, op_value: int, program: "Program", *args):
+        modes = self.param_modes(op_value)
+        a = self.get_values(modes, args, program)[0]
+
+        program.data_pointer += a
+        return True  # continue
+
+
 class Program:
+
+    class Memory:
+        alloc_size = 64
+
+        def __init__(self, init_memory: List[int]):
+            self._program = init_memory
+            self._memory = []
+
+        def reset(self):
+            self._memory = []
+
+        def _allocate(self, mem_offset: int):
+            while mem_offset >= len(self._memory):
+                self._memory.extend([0] * self.alloc_size)
+
+        def __len__(self):
+            return len(self._program) + len(self._memory)
+
+        def __getitem__(self, item: int):
+            if item < 0:
+                raise MemoryFault('Cannot access negative memory')
+            if item < len(self._program):
+                return self._program[item]
+            mem_offset = item - len(self._program)
+            # Allocate on access
+            self._allocate(mem_offset)
+            # if mem_offset >= len(self._memory):
+            # raise MemoryFault(f'Failure when accessing {item} (mem_offset={mem_offset} > {len(self._memory)})')
+            try:
+                return self._memory[mem_offset]
+            except IndexError:
+                # That should not happen but just in case...
+                raise MemoryFault(f'mem_offset={mem_offset}')
+
+        def __setitem__(self, key: int, value: int):
+            if key < 0:
+                raise MemoryFault('Cannot set negative memory')
+
+            if key < len(self._program):
+                self._program[key] = value
+                return
+
+            mem_offset = key - len(self._program)
+            self._allocate(mem_offset)
+            try:
+                self._memory[mem_offset] = value
+            except IndexError:
+                # That should not happen but just in case...
+                raise MemoryFault(f'mem_offset={mem_offset}')
+
+        # TODO(tr) __delitem__?
 
     @classmethod
     def _add(cls, reg_a: int, reg_b: int):
@@ -285,12 +362,22 @@ class Program:
             AddInstruction, MultInstruction, EndInstruction,  # day 02
             InputInstruction, OutputInstruction,  # day 05 p1
             JumpIfFalseInstruction, JumpIfTrueInstruction, LessThanInstruction, EqualsInstruction,  # day 05 p2
+            AdjustBaseInstruction,  # day 09 p1
         )
     }  # type: Dict[int, BaseInstruction]
 
     # TODO(tr) make inputs a generator
-    def __init__(self, initial_memory: List[int], inputs: List[int] = None, verbose=False) -> None:
-        self.memory = initial_memory
+    def __init__(
+        self,
+        initial_memory: List[int],
+        inputs: List[int]=None,
+        dynamic_memory=False,
+        verbose=False,
+    ) -> None:
+        if dynamic_memory:
+            self.memory = self.Memory(initial_memory)
+        else:
+            self.memory = initial_memory
         if verbose:
             self.log = logging.getLogger(self.__class__.__name__)
         else:
@@ -300,11 +387,20 @@ class Program:
         self._current_input = 0
         self.outputs = []
         self.pointer = 0
+        self.data_pointer = 0
+
+    def reset_pointers(self):
+        self.pointer = 0
+        self.data_pointer = 0
 
     def reset_inputs(self, inputs=None):
         self._current_input = 0
         if inputs is not None:
             self._inputs = inputs
+
+    def reset_memory(self):
+        if isinstance(self.memory, self.Memory):
+            self.memory.reset()
 
     def read(self):
         if self._current_input < len(self._inputs):
@@ -326,7 +422,7 @@ class Program:
             return self.memory[0]
 
     def execute(self, pointer: int) -> Optional[int]:
-        op = None
+        op_value = None
         parameters = []
         try:
             op_value = self.memory[pointer]
@@ -341,19 +437,22 @@ class Program:
             for i in range(0, instruction.params):
                 parameters.append(self.memory[pointer + 1 + i])
 
-            # TODO(tr) give the op_value to print the mode
             self.log_debug(f'{pointer}: {instruction.as_string(op_value, self, *parameters)}')
             cont = instruction.execute(op_value, self, *parameters)
 
             if not cont:
                 return None
         except IndexError:
-            raise MemoryFault(f'On OP={op} PARAM={",".join(map(str, parameters))} - pointer={pointer}')
+            raise MemoryFault(
+                f'On {op_value} PARAM={",".join(map(str, parameters))} - '
+                f'pointer={pointer} data_pointer={self.data_pointer}'
+            )
 
         return instruction.next_pointer(pointer)
 
     def run(self, *args, **kwargs) -> Any:
         self.reset_inputs()
-        self.pointer = 0
+        self.reset_pointers()
+        self.reset_memory()
         while self.pointer is not None:
             self.pointer = self.execute(self.pointer)
