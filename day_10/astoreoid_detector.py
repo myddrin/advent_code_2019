@@ -61,46 +61,51 @@ class AsteroidMap:
         obj.compute_visible()
         return obj
 
-    def _get_visible_asteroids(self, cell: Cell) -> Set[Position]:
-        visible_map = [
-            [True] * len(self.map[0])
-        ] * len(self.map)
+    def _update_visible(self, visible_map, cell, asteroid):
+        diff = cell.difference(asteroid.position)
 
-        def _update_shadow(init_p, end_p, diff_p):
-            for y in range(init_p.y, end_p.y, diff.y):
-                for x in range(init_p.x, end_p.x, diff.x):
-                    visible_map[y][x] = False
+        p = Position(asteroid.position.x + diff.x, asteroid.position.y + diff.y)
+        end_p = Position(
+            len(self.map[0]),
+            len(self.map),
+        )
+        # if diff.x < 0:
+        #     end_p.x = 0
+        # if diff.y < 0:
+        #     end_p.y = 0
+
+        while True:
+            if p.x < 0 or p.x >= end_p.x or p.y < 0 or p.y > end_p.y:
+                break
+
+            visible_map[p.y][p.x] = False
+
+            p = Position(p.x + diff.x, p.y + diff.y)
+
+    def _empty_visible(self):
+        visible_map = []
+        for y in range(0, len(self.map)):
+            row = []
+            for x in range(0, len(self.map[0])):
+                row.append(True)
+            visible_map.append(row)
+
+        return visible_map
+
+    def _get_visible_asteroids(self, cell: Cell) -> Set[Position]:
+        visible_map = []
+        for y in range(0, len(self.map)):
+            row = []
+            for x in range(0, len(self.map[0])):
+                row.append(True)
+            visible_map.append(row)
 
         for asteroid in self.asteroids():
-            if asteroid.position != cell.position:
+            if asteroid.position == cell.position:
                 continue
 
             # hide stuff in shadow
-            diff = cell.difference(asteroid.position)
-
-            init_p = Position(asteroid.position.x + diff.x, asteroid.position.y + diff.y)
-            end_p = Position(
-                len(self.map[0]),
-                len(self.map),
-            )
-            if diff.x < 0:
-                end_p.x = 0
-            if diff.y < 0:
-                end_p.y = 0
-
-            if diff.y != 0:
-                try_y = range(init_p.y, end_p.y, diff.y)
-            else:
-                try_y = [init_p.y]
-
-            if diff.x != 0:
-                try_x = range(init_p.x, end_p.x, diff.x)
-            else:
-                try_x = [init_p.x]
-
-            for y in try_y:
-                for x in try_x:
-                    visible_map[y][x] = False
+            self._update_visible(visible_map, cell, asteroid)
 
         return set((
             asteroid.position
