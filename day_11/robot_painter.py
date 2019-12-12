@@ -82,14 +82,13 @@ class RobotPainter:
         self.move_to(start_position, Facing.Up)
 
     def move_to(self, p: Position, facing: Facing):
-        print(f'Robot is moving from {self.position} {self.facing} to {p} {facing}')
         self.position = p
         if p not in self.hull:
             self.hull[p] = self.Black
         self.facing = facing
         self.panels.append(self.hull[self.position])
 
-    def run(self, start_position: Position=None, start_colour: int=Black, print_robot=False):
+    def run(self, start_position: Position=None, start_colour: int=Black, debug=False):
         if start_position is None:
             start_position = Position(0, 0)
         self.reset(start_position)
@@ -108,18 +107,18 @@ class RobotPainter:
             program.pointer = program.execute(program.pointer)
 
             if len(program.outputs) >= output_pointer + 2:
-
-                if print_robot:
-                    for line in robot.hull_as_str(print_robot=False):
-                        print(line)
-                    print('----')
-
-                print(f'Got outputs: {", ".join(map(str, program.outputs[output_pointer:]))}')
+                if debug:
+                    print(f'Got outputs: {", ".join(map(str, program.outputs[output_pointer:]))}')
 
                 self.hull[self.position] = program.outputs[output_pointer]
                 p, facing = self.position.move(self.facing, program.outputs[output_pointer + 1])
                 output_pointer += 2
+                old_position = self.position
+                old_facing = self.facing
                 self.move_to(p, facing)
+
+                if debug:
+                    print(f'Robot is moving from {old_position} {old_facing} to {self.position} {self.facing}')
 
         print(f'Robot moved {output_pointer // 2} times')
 
@@ -134,6 +133,16 @@ class RobotPainter:
             max_p.y = max(max_p.y, p.y)
             min_p.y = min(min_p.y, p.y)
 
+        if min_p.x < 0:
+            min_p.x -= 1
+        else:
+            min_p.x += 1
+
+        if min_p.y < 0:
+            min_p.y -= 1
+        else:
+            min_p.y += 1
+
         if print_robot:
             max_p.x = max(max_p.x, self.position.x)
             min_p.x = min(min_p.x, self.position.x)
@@ -142,7 +151,7 @@ class RobotPainter:
             min_p.y = min(min_p.y, self.position.y)
 
         rv = []
-        for y in range(min_p.y, max_p.y):
+        for y in range(max_p.y, min_p.y, -1):
             row = ''
             for x in range(min_p.x, max_p.x):
                 colour = self.hull.get(Position(x, y), self.Black)
@@ -164,30 +173,14 @@ class RobotPainter:
 if __name__ == '__main__':
 
     robot = RobotPainter()
-    # robot.run()
-    # print(f'The robot ran over {len(robot.hull.keys())} tiles')
-    #
-    # for line in robot.hull_as_str():
-    #     print(line)
+    robot.run()
+    print(f'The robot ran over {len(robot.hull.keys())} tiles')
 
-    print(f'Re-run on white panel')
-
-    robot.run(start_colour=robot.White, print_robot=True)
-
-    # robot_on_white = RobotPainter(start_colour=RobotPainter.White)
-    # robot_on_white.run()
-    # print(f'The robot ran over {len(robot_on_white.hull.keys())} tiles')
-    #
     for line in robot.hull_as_str():
         print(line)
 
-    # There is a bug somewhere because the output is:
-    """
-    #  # #  #  ##  ###  #  # #  #  ##  #  #  
-    #  # # #  #  # #  # #  # #  # #  # # #   
-    #  # # #     # #  # #### #  # #    ###   
-    #### ##      # ###  #  # #### #    #  #  
-    #  # # #     # #  # #  # #  # #  # #  #
-    """
-    # Not HKORHHCK
-    # Not AKORHACK
+    print(f'Re-run starting on a white panel')
+    robot.run(start_colour=robot.White)
+
+    for line in robot.hull_as_str():
+        print(line)
