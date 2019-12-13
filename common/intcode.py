@@ -383,7 +383,10 @@ class Program:
         else:
             self.log = None
 
-        self._inputs = inputs or []
+        if inputs is None:
+            inputs = []
+
+        self._inputs = inputs
         self._current_input = 0
         self.outputs = []
         self.pointer = 0
