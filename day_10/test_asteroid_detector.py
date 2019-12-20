@@ -97,7 +97,7 @@ def test_view():
 def test_best_station(filename, position, can_see):
     asteroid_map = AsteroidMap.load_from_file(filename)
     asteroid_map.compute_all_visible()
-    best = asteroid_map.best_monitor_station()
+    best = asteroid_map.find_station()
     assert best.position == position
     assert len(best.can_see) == can_see
 
@@ -108,6 +108,6 @@ def test_best_station(filename, position, can_see):
 def test_slow_best_station(filename, position, can_see):
     asteroid_map = AsteroidMap.load_from_file(filename)
     asteroid_map.compute_all_visible()
-    best = asteroid_map.best_monitor_station()
+    best = asteroid_map.find_station()
     assert best.position == position
     assert len(best.can_see) == can_see

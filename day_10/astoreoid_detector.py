@@ -1,6 +1,6 @@
 import math
 from enum import Enum, unique
-from typing import Dict, Iterator, Set
+from typing import Dict, Iterator, Set, List
 
 import attr
 
@@ -35,10 +35,19 @@ class Asteroid:
     position: Position = attr.ib()
     can_see: Set["Asteroid"] = attr.ib(default=None, cmp=False, hash=False)
 
+    def angle_from(self, position: Position) -> float:
+        # To consider position as the center of a trigonometric circle
+        this_position = self.position + Position(-position.x, -position.y)
+        return math.atan2(this_position.x, this_position.y)
+
+    def destroy_in_rotation(self) -> List["Asteroid"]:
+        return sorted(self.can_see, key=lambda a: a.angle_from(self.position))
+
 
 @unique
 class StringRepr(Enum):
     Asteroid = '#'
+    Station = 'X'
     Empty = '.'
 
 
@@ -47,6 +56,7 @@ class AsteroidMap:
     def __init__(self):
         self.asteroid_map: Dict[Position, Asteroid] = {}
         self._max_position: Position = Position(0, 0)
+        self._station = None
 
     def y_range(self):
         return range(0, self._max_position.y)
@@ -66,8 +76,20 @@ class AsteroidMap:
     def can_see(self, position: Position) -> int:
         a = self.asteroid_map.get(position)
         if a is not None:
+            if a.can_see is None:
+                self.compute_visible_asteroids(a)
             return len(a.can_see)
         return 0
+
+    def destruction_rotation(self, station: Asteroid) -> List[Asteroid]:
+        """Do 1 rotation of destruction and return the list of destroyed asteroids"""
+        to_destroy = station.destroy_in_rotation()
+        for a in to_destroy:
+            self.asteroid_map.pop(a.position)
+
+        # Recompute number of visible asteroids after the rotation
+        self.compute_visible_asteroids(station)
+        return to_destroy
 
     @classmethod
     def load_from_file(cls, filename: str) -> "AsteroidMap":
@@ -76,66 +98,17 @@ class AsteroidMap:
         with open(filename, 'r') as f:
             for y, line in enumerate(f):
                 for x, c in enumerate(line.replace('\n', '')):
-                    if c == StringRepr.Asteroid.value:
+                    if c in (StringRepr.Asteroid.value, StringRepr.Station.value):
                         p = Position(x, y)
                         obj.asteroid_map[p] = Asteroid(p)
 
                         obj._max_position.x = max(obj._max_position.x, p.x + 1)
                         obj._max_position.y = max(obj._max_position.y, p.y + 1)
 
-        return obj
+                        if c == StringRepr.Station.value:
+                            obj._station = obj.asteroid_map[p]
 
-    # def _update_visible(self, visible_map, cell, asteroid):
-    #     diff = cell.difference(asteroid.position)
-    #
-    #     p = Position(asteroid.position.x + diff.x, asteroid.position.y + diff.y)
-    #     end_p = Position(
-    #         len(self.map[0]),
-    #         len(self.map),
-    #     )
-    #     # if diff.x < 0:
-    #     #     end_p.x = 0
-    #     # if diff.y < 0:
-    #     #     end_p.y = 0
-    #
-    #     while True:
-    #         if p.x < 0 or p.x >= end_p.x or p.y < 0 or p.y > end_p.y:
-    #             break
-    #
-    #         visible_map[p.y][p.x] = False
-    #
-    #         p = Position(p.x + diff.x, p.y + diff.y)
-    #
-    # def _empty_visible(self):
-    #     visible_map = []
-    #     for y in range(0, len(self.map)):
-    #         row = []
-    #         for x in range(0, len(self.map[0])):
-    #             row.append(True)
-    #         visible_map.append(row)
-    #
-    #     return visible_map
-    #
-    # def _get_visible_asteroids(self, cell: Cell) -> Set[Position]:
-    #     visible_map = []
-    #     for y in range(0, len(self.map)):
-    #         row = []
-    #         for x in range(0, len(self.map[0])):
-    #             row.append(True)
-    #         visible_map.append(row)
-    #
-    #     for asteroid in self.asteroids():
-    #         if asteroid.position == cell.position:
-    #             continue
-    #
-    #         # hide stuff in shadow
-    #         self._update_visible(visible_map, cell, asteroid)
-    #
-    #     return set((
-    #         asteroid.position
-    #         for asteroid in self.asteroids()
-    #         if visible_map[asteroid.position.y][asteroid.position.x]
-    #     ))
+        return obj
 
     def compute_visible_asteroids(self, asteroid: Asteroid) -> None:
         visible_asteroids = {
@@ -169,21 +142,44 @@ class AsteroidMap:
             print(f'For asteroid {i + 1}/{len(self.asteroid_map)} on {asteroid.position}')
             self.compute_visible_asteroids(asteroid)
 
-    def best_monitor_station(self) -> Asteroid:
-        asteroid = sorted(self.asteroid_map.values(), key=lambda a: len(a.can_see))[-1]
-        return asteroid
+    def find_station(self) -> Asteroid:
+        if self._station is None:
+            self.compute_all_visible()
+            self._station = sorted(self.asteroid_map.values(), key=lambda a: len(a.can_see))[-1]
+
+        return self._station
+
+    def destroy_all(self, max_destroyed=None) -> List[Asteroid]:
+        destroyed = []
+        i = 1
+        while len(self._station.can_see) > 0 or (max_destroyed and len(destroyed) >= max_destroyed):
+            print(f'Circle {i} of destruction:')
+            d = self.destruction_rotation(self._station)
+            print(f'    => Destroyed {len(d)} asteroids and can now see {len(self._station.can_see)} asteroids')
+            destroyed += d
+            i += 1
+
+        return destroyed
 
 
 if __name__ == '__main__':
     asteroid_map = AsteroidMap.load_from_file('input.txt')
 
-    best = asteroid_map.asteroid_map.get(Position(11, 13))
+    station = asteroid_map.asteroid_map.get(Position(11, 13))
     # best = None
 
-    if best is None:
-        asteroid_map.compute_all_visible()
-        best = asteroid_map.best_monitor_station()
+    if station is None:
+        station = asteroid_map.find_station()
         # 11, 13
     else:
-        asteroid_map.compute_visible_asteroids(best)
-    print(f'Found best location on {best.position} because it can see {len(best.can_see)} other asteroids')
+        asteroid_map._station = station
+        asteroid_map.compute_visible_asteroids(station)
+    print(f'Found best location on {station.position} because it can see {len(station.can_see)} other asteroids')
+
+    destroyed = asteroid_map.destroy_all(200)
+
+    if len(destroyed) >= 200:
+        winner = destroyed[199]
+        print(f'200th destroyed asteroid is on {winner.position}')
+    else:
+        print(f'Huh. There were not enough asteroids')
