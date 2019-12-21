@@ -1,6 +1,6 @@
 import math
 from enum import Enum, unique
-from typing import Dict, Iterator, Set, List
+from typing import Dict, Iterator, Set, List, Optional
 
 import attr
 
@@ -37,10 +37,15 @@ class Asteroid:
 
     def angle_from(self, position: Position) -> float:
         # To consider position as the center of a trigonometric circle
-        this_position = self.position + Position(-position.x, -position.y)
-        return math.atan2(this_position.x, this_position.y)
+        this_position = position + Position(-self.position.x, -self.position.y)
+        # We inverse the x axis to rotation 90 deg up?
+        rad = math.atan2(-this_position.x, this_position.y)
+        # atan2 returns -pi to pi
+        if rad < 0.0:
+            rad += 2 * math.pi
+        return rad
 
-    def destroy_in_rotation(self) -> List["Asteroid"]:
+    def laser_rotation(self) -> List["Asteroid"]:
         return sorted(self.can_see, key=lambda a: a.angle_from(self.position))
 
 
@@ -56,7 +61,12 @@ class AsteroidMap:
     def __init__(self):
         self.asteroid_map: Dict[Position, Asteroid] = {}
         self._max_position: Position = Position(0, 0)
-        self._station = None
+        self._station: Optional[Asteroid] = None
+
+    def set_station(self, position: Position):
+        self._station = self.asteroid_map[position]
+        if self._station.can_see is None:
+            self.compute_visible_asteroids(self._station)
 
     def y_range(self):
         return range(0, self._max_position.y)
@@ -81,19 +91,10 @@ class AsteroidMap:
             return len(a.can_see)
         return 0
 
-    def destruction_rotation(self, station: Asteroid) -> List[Asteroid]:
-        """Do 1 rotation of destruction and return the list of destroyed asteroids"""
-        to_destroy = station.destroy_in_rotation()
-        for a in to_destroy:
-            self.asteroid_map.pop(a.position)
-
-        # Recompute number of visible asteroids after the rotation
-        self.compute_visible_asteroids(station)
-        return to_destroy
-
     @classmethod
     def load_from_file(cls, filename: str) -> "AsteroidMap":
         obj = cls()
+        station_position = None
 
         with open(filename, 'r') as f:
             for y, line in enumerate(f):
@@ -106,8 +107,10 @@ class AsteroidMap:
                         obj._max_position.y = max(obj._max_position.y, p.y + 1)
 
                         if c == StringRepr.Station.value:
-                            obj._station = obj.asteroid_map[p]
+                            station_position = p
 
+        if station_position is not None:
+            obj.set_station(station_position)
         return obj
 
     def compute_visible_asteroids(self, asteroid: Asteroid) -> None:
@@ -149,14 +152,18 @@ class AsteroidMap:
 
         return self._station
 
-    def destroy_all(self, max_destroyed=None) -> List[Asteroid]:
+    def destroy_all(self, max_destroyed: Optional[int] = None) -> List[Asteroid]:
         destroyed = []
         i = 1
-        while len(self._station.can_see) > 0 or (max_destroyed and len(destroyed) >= max_destroyed):
-            print(f'Circle {i} of destruction:')
-            d = self.destruction_rotation(self._station)
-            print(f'    => Destroyed {len(d)} asteroids and can now see {len(self._station.can_see)} asteroids')
-            destroyed += d
+        while len(self._station.can_see) > 0:
+            to_destroy = self._station.laser_rotation()
+            print(f'Circle {i} of destruction: found {len(to_destroy)} asteroids')
+            for a in to_destroy:
+                destroyed.append(a)
+                self.asteroid_map.pop(a.position)
+                if max_destroyed is not None and len(destroyed) >= max_destroyed:
+                    return destroyed
+            self.compute_visible_asteroids(self._station)
             i += 1
 
         return destroyed
@@ -165,21 +172,19 @@ class AsteroidMap:
 if __name__ == '__main__':
     asteroid_map = AsteroidMap.load_from_file('input.txt')
 
-    station = asteroid_map.asteroid_map.get(Position(11, 13))
-    # best = None
+    station_p = Position(11, 13)  # None to compute it
 
-    if station is None:
-        station = asteroid_map.find_station()
-        # 11, 13
-    else:
-        asteroid_map._station = station
-        asteroid_map.compute_visible_asteroids(station)
+    if station_p is not None:
+        asteroid_map.set_station(station_p)
+
+    station = asteroid_map.find_station()
+
     print(f'Found best location on {station.position} because it can see {len(station.can_see)} other asteroids')
 
-    destroyed = asteroid_map.destroy_all(200)
+    asteroid_destroyed = asteroid_map.destroy_all(200)
 
-    if len(destroyed) >= 200:
-        winner = destroyed[199]
-        print(f'200th destroyed asteroid is on {winner.position}')
+    if len(asteroid_destroyed) >= 200:
+        winner = asteroid_destroyed[199]
+        print(f'200th destroyed asteroid is on {winner.position} => {winner.position.x * 100 + winner.position.y}')
     else:
         print(f'Huh. There were not enough asteroids')
